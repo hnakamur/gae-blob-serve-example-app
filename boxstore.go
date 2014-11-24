@@ -7,6 +7,7 @@ import (
 
 	"appengine"
 	"appengine/blobstore"
+	"appengine/user"
 )
 
 func serveError(c appengine.Context, w http.ResponseWriter, err error) {
@@ -20,10 +21,13 @@ var rootTemplate = template.Must(template.New("root").Parse(rootTemplateHTML))
 
 const rootTemplateHTML = `
 <html><body>
-<form action="{{.}}" method="POST" enctype="multipart/form-data">
+<form action="{{.uploadURL}}" method="POST" enctype="multipart/form-data">
 Upload File: <input type="file" name="file"><br>
 <input type="submit" name="submit" value="Submit">
-</form></body></html>
+</form>
+<a href="{{.signOutURL}}">sign out</a>
+</body>
+</html>
 `
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +38,14 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html")
-	err = rootTemplate.Execute(w, uploadURL)
+	signOutURL, err := user.LogoutURL(c, "/")
+	if err != nil {
+		c.Errorf("%v", err)
+	}
+	err = rootTemplate.Execute(w, map[string]interface{}{
+		"uploadURL":  uploadURL,
+		"signOutURL": signOutURL,
+	})
 	if err != nil {
 		c.Errorf("%v", err)
 	}
