@@ -57,6 +57,14 @@ func handleServe(w http.ResponseWriter, r *http.Request) {
 
 func handleUpload(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
+	if !user.IsAdmin(c) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, "Forbidden: only admin user can upload files")
+		c.Errorf("Non admin user tried to upload files: %v", user.Current(c).Email)
+		return
+	}
+
 	blobs, _, err := blobstore.ParseUpload(r)
 	if err != nil {
 		serveError(c, w, err)
