@@ -16,6 +16,34 @@ type BlobFile struct {
 	Filename string
 }
 
+func loadBlobFileByFilename(c appengine.Context, filename string) (*BlobFile, error) {
+	key := blobFileKeyFromFilename(c, filename)
+	var blobFile BlobFile
+	err := datastore.Get(c, key, &blobFile)
+	return &blobFile, err
+}
+
+func saveBlobFile(c appengine.Context, blobInfo *blobstore.BlobInfo) error {
+	filename := blobInfo.Filename
+	blobFile := &BlobFile{
+		BlobKey:  blobInfo.BlobKey,
+		Filename: filename,
+	}
+	key := blobFileKeyFromFilename(c, filename)
+	_, err := datastore.Put(c, key, blobFile)
+	return err
+}
+
+func blobFileKeyFromFilename(c appengine.Context, filename string) *datastore.Key {
+	return datastore.NewKey(
+		c,          // appengine.Context
+		"BlobFile", // Kind
+		filename,   // String ID; empty means no string ID
+		0,          // Integer ID; if 0, generate automatically. Ignored if string ID specified.
+		nil,        // Parent Key; nil means no parent
+	)
+}
+
 func serveError(c appengine.Context, w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
 	w.Header().Set("Content-Type", "text/plain")
@@ -75,9 +103,7 @@ func handleServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := blobFileKeyFromFilename(c, filename)
-	var blobFile BlobFile
-	err := datastore.Get(c, key, &blobFile)
+	blobFile, err := loadBlobFileByFilename(c, filename)
 	if err == datastore.ErrNoSuchEntity {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/plain")
@@ -101,7 +127,8 @@ const uploadDoneTemplateHTML = `
 </head>
 <body>
 <h1>Upload done!</h1>
-<a href="{{.url}}">{{.filename}}</a>
+<a href="{{.url}}">{{.filename}}</a><br>
+<a href="/">top page</a>
 </body>
 </html>
 `
@@ -128,13 +155,27 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filename := file[0].Filename
+	blobFile, err := loadBlobFileByFilename(c, filename)
+	if err != nil {
+		if err != datastore.ErrNoSuchEntity {
+			serveError(c, w, err)
+			return
+		}
+	} else {
+		err = blobstore.Delete(c, blobFile.BlobKey)
+		if err != nil {
+			serveError(c, w, err)
+			return
+		}
+	}
+
 	err = saveBlobFile(c, file[0])
 	if err != nil {
 		serveError(c, w, err)
 		return
 	}
 
-	filename := file[0].Filename
 	err = uploadDoneTemplate.Execute(w, map[string]interface{}{
 		"url":      "/serve/" + filename,
 		"filename": filename,
@@ -142,27 +183,6 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		c.Errorf("%v", err)
 	}
-}
-
-func saveBlobFile(c appengine.Context, blobInfo *blobstore.BlobInfo) error {
-	filename := blobInfo.Filename
-	blobFile := &BlobFile{
-		BlobKey:  blobInfo.BlobKey,
-		Filename: filename,
-	}
-	key := blobFileKeyFromFilename(c, filename)
-	_, err := datastore.Put(c, key, blobFile)
-	return err
-}
-
-func blobFileKeyFromFilename(c appengine.Context, filename string) *datastore.Key {
-	return datastore.NewKey(
-		c,          // appengine.Context
-		"BlobFile", // Kind
-		filename,   // String ID; empty means no string ID
-		0,          // Integer ID; if 0, generate automatically. Ignored if string ID specified.
-		nil,        // Parent Key; nil means no parent
-	)
 }
 
 func init() {
